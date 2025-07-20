@@ -34,7 +34,7 @@ class AirflowClient(ABC):
         pass
 
     @abstractmethod
-    async def get_dag_runs_with_plan(self, dag_id: str, limit: int = 10) -> str:
+    async def get_dag_list_runs(self, dag_id: str, limit: int = 10) -> str:
         """DAG runs with plan (airflow dags list-runs -d <DAG_ID> --plan)"""
         pass
 

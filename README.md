@@ -2,7 +2,7 @@
 
 **Airflow TUI** is a terminal-based user interface (TUI) for Apache Airflow, built with [Textual](https://github.com/Textualize/textual).
 
-![](static/images/sample_tui.png)
+![](/images/sample_tui.png)
 
 ## Installation
 
@@ -31,3 +31,4 @@ python -m src.tui.app
 
 - [ ] Log viewing interface
 - [ ] Keyboard navigation support
+- [ ] airflow 3 support

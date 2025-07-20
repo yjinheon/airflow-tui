@@ -324,11 +324,11 @@ class AirflowCLIClient(AirflowClient):
         except Exception:
             return []
 
-    async def get_dag_runs_with_plan(self, dag_id: str, limit: int = 10) -> str:
-        """airflow dags list-runs -d {dag_id} --plan"""
+    async def get_dag_list_runs(self, dag_id: str, limit: int = 10) -> str:
+        """airflow dags list-runs -d {dag_id}"""
         try:
             result = await self._run_command(
-                ["airflow", "dags", "list-runs", "-d", dag_id, "--plan"],
+                ["airflow", "dags", "list-runs", "-d", dag_id],
                 parse_json=False,
             )
             return result
