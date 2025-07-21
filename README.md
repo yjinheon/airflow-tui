@@ -31,4 +31,6 @@ python -m src.tui.app
 
 - [ ] Log viewing interface
 - [ ] Keyboard navigation support
+- [ ] Clear button
+- [ ] Delete button
 - [ ] airflow 3 support
