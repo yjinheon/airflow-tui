@@ -20,6 +20,7 @@ from textual.reactive import reactive
 from textual import work
 from typing import Dict, List, Optional, TYPE_CHECKING
 from rich.text import Text
+import json
 
 # 절대경로 imports
 from src.tui.clients.base import AirflowClient
@@ -296,167 +297,7 @@ class DAGManagement(Widget):
                         end_date="2025-07-18T06:06:00",
                     ),
                 ],
-            ),
-            DAGInfo(
-                dag_id="user_sync",
-                is_paused=False,
-                is_active=True,
-                owner="data-team",
-                description="Sync user data from external API every 15 minutes",
-                schedule_interval="*/15 * * * *",
-                tags=["sync", "users", "hourly"],
-                concurrency=8,
-                last_updated="2025-07-18T09:00:00",
-                fileloc="/opt/airflow/dags/user_sync.py",
-                tasks=[
-                    TaskInfo(
-                        task_id="start",
-                        dag_id="user_sync",
-                        operator="DummyOperator",
-                        state="success",
-                        start_date="2025-07-18T09:15:00",
-                        end_date="2025-07-18T09:15:01",
-                    ),
-                    TaskInfo(
-                        task_id="extract_users",
-                        dag_id="user_sync",
-                        operator="HttpSensor",
-                        state="failed",
-                        start_date="2025-07-18T09:15:01",
-                        end_date="2025-07-18T09:20:27",
-                    ),
-                    TaskInfo(
-                        task_id="transform_data",
-                        dag_id="user_sync",
-                        operator="PythonOperator",
-                        state="upstream_failed",
-                        start_date=None,
-                        end_date=None,
-                    ),
-                    TaskInfo(
-                        task_id="load_to_db",
-                        dag_id="user_sync",
-                        operator="PostgresOperator",
-                        state="upstream_failed",
-                        start_date=None,
-                        end_date=None,
-                    ),
-                ],
-            ),
-            DAGInfo(
-                dag_id="ml_training",
-                is_paused=True,
-                is_active=False,
-                owner="ml-team",
-                description="Machine learning model training pipeline",
-                schedule_interval="0 2 * * 1",
-                tags=["ml", "training", "weekly"],
-                concurrency=4,
-                last_updated="2025-07-15T01:45:00",
-                fileloc="/opt/airflow/dags/ml_training.py",
-                tasks=[
-                    TaskInfo(
-                        task_id="prepare_data",
-                        dag_id="ml_training",
-                        operator="PythonOperator",
-                        state="success",
-                        start_date="2025-07-15T02:00:00",
-                        end_date="2025-07-15T02:30:00",
-                    ),
-                    TaskInfo(
-                        task_id="train_model",
-                        dag_id="ml_training",
-                        operator="PythonOperator",
-                        state="success",
-                        start_date="2025-07-15T02:30:00",
-                        end_date="2025-07-15T04:15:00",
-                    ),
-                    TaskInfo(
-                        task_id="evaluate",
-                        dag_id="ml_training",
-                        operator="PythonOperator",
-                        state="success",
-                        start_date="2025-07-15T04:15:00",
-                        end_date="2025-07-15T04:30:00",
-                    ),
-                ],
-            ),
-            DAGInfo(
-                dag_id="log_processor",
-                is_paused=False,
-                is_active=True,
-                owner="ops-team",
-                description="Process and analyze system logs",
-                schedule_interval="*/5 * * * *",
-                tags=["logs", "monitoring", "ops"],
-                concurrency=12,
-                last_updated="2025-07-18T08:15:00",
-                fileloc="/opt/airflow/dags/log_processor.py",
-                tasks=[
-                    TaskInfo(
-                        task_id="collect_logs",
-                        dag_id="log_processor",
-                        operator="BashOperator",
-                        state="running",
-                        start_date="2025-07-18T09:25:00",
-                        end_date=None,
-                    ),
-                    TaskInfo(
-                        task_id="parse_logs",
-                        dag_id="log_processor",
-                        operator="PythonOperator",
-                        state="queued",
-                        start_date=None,
-                        end_date=None,
-                    ),
-                    TaskInfo(
-                        task_id="store_metrics",
-                        dag_id="log_processor",
-                        operator="PostgresOperator",
-                        state="queued",
-                        start_date=None,
-                        end_date=None,
-                    ),
-                ],
-            ),
-            DAGInfo(
-                dag_id="backup_job",
-                is_paused=False,
-                is_active=True,
-                owner="ops-team",
-                description="Weekly database backup job",
-                schedule_interval="0 0 * * 0",
-                tags=["backup", "weekly", "ops"],
-                concurrency=2,
-                last_updated="2025-07-13T23:30:00",
-                fileloc="/opt/airflow/dags/backup_job.py",
-                tasks=[
-                    TaskInfo(
-                        task_id="backup_db",
-                        dag_id="backup_job",
-                        operator="PostgresOperator",
-                        state="success",
-                        start_date="2025-07-14T00:00:00",
-                        end_date="2025-07-14T00:45:00",
-                    ),
-                    TaskInfo(
-                        task_id="upload_s3",
-                        dag_id="backup_job",
-                        operator="S3Operator",
-                        state="success",
-                        start_date="2025-07-14T00:45:00",
-                        end_date="2025-07-14T01:15:00",
-                    ),
-                    TaskInfo(
-                        task_id="cleanup",
-                        dag_id="backup_job",
-                        operator="BashOperator",
-                        state="success",
-                        start_date="2025-07-14T01:15:00",
-                        end_date="2025-07-14T01:17:00",
-                    ),
-                ],
-            ),
+            )
         ]
 
         return example_dags
@@ -497,9 +338,9 @@ class DAGManagement(Widget):
                     status_class = "status-active"
 
                 # 스케줄 정보
-                schedule = dag.schedule_interval or "Manual"
+                # schedule = dag.schedule_interval.value or "Manual"
+                schedule = self.parse_schedule(dag.schedule_interval)
 
-                # 최근 실행 정보 (임시)
                 last_run = "2025-07-18 06:00"
                 next_run = "2025-07-19 06:00" if not dag.is_paused else "-"
 
@@ -513,6 +354,48 @@ class DAGManagement(Widget):
                     key=dag.dag_id,
                 )
 
+    def parse_schedule(self, schedule_interval):
+        # Handle None or empty values
+        if not schedule_interval:
+            return "Manual"
+
+        # Handle string values - convert JSON string to dict if needed
+        if isinstance(schedule_interval, str):
+            if schedule_interval.lower() in ["none", "null", ""]:
+                return "Manual"
+            # Try to parse JSON string to dict
+            try:
+                import json
+
+                schedule_interval = json.loads(schedule_interval)
+            except (json.JSONDecodeError, ValueError):
+                # If not JSON, treat as regular string (cron expression)
+                return schedule_interval
+
+        # Handle dictionary values (from JSON response)
+        if isinstance(schedule_interval, dict):
+            if schedule_interval.get("__type") == "CronExpression":
+                return schedule_interval.get("value", "Manual")
+            elif schedule_interval.get("__type") == "TimeDelta":
+                unit_names = {
+                    "weeks": "week",
+                    "days": "day",
+                    "hours": "hour",
+                    "minutes": "minute",
+                    "seconds": "second",
+                }
+                parts = [
+                    f"{schedule_interval[unit]} {name}{'s' if int(schedule_interval[unit]) > 1 else ''}"
+                    for unit, name in unit_names.items()
+                    if unit in schedule_interval and int(schedule_interval[unit]) > 0
+                ]
+                return "every " + " ".join(parts) if parts else "immediately"
+            else:
+                return str(schedule_interval.get("value", "Manual"))
+
+        # Fallback for any other type
+        return str(schedule_interval) if schedule_interval else "Manual"
+
     def should_show_dag(self, dag: DAGInfo) -> bool:
         """DAG 필터링 조건 확인"""
         # 상태 필터
@@ -523,14 +406,12 @@ class DAGManagement(Widget):
         elif self.filter_status == "failed" and dag.is_active:
             return False
 
-        # 검색 쿼리
         if self.search_query and self.search_query.lower() not in dag.dag_id.lower():
             return False
 
         return True
 
     def on_data_table_row_selected(self, event):
-        """DAG 테이블 행 선택 시"""
         if event.control.id == "dag-table":
             # RowKey가 아닌 실제 DAG ID 컬럼 값을 가져오기
             dag_table = event.control
@@ -544,9 +425,7 @@ class DAGManagement(Widget):
                 self.select_dag_row(str(event.row_key))
 
     def on_data_table_row_highlighted(self, event):
-        """DAG 테이블 행 하이라이트 시 (커서 이동)"""
         if event.control.id == "dag-table":
-            # 하이라이트된 행 정보 표시 (선택은 아님)
             try:
                 # 실제 DAG ID 컬럼(인덱스 1) 값 추출
                 dag_table = event.control
@@ -567,18 +446,14 @@ class DAGManagement(Widget):
                     )
 
     def select_dag_row(self, dag_id):
-        """DAG 행 선택 처리"""
-        # "no_dags" 행 선택 시 무시
         if dag_id == "no_dags":
             return
 
-        # DAG select
         self.selected_dag = dag_id
         self.selected_dag_info = next(
             (dag for dag in self.dag_list if dag.dag_id == dag_id), None
         )
 
-        # 선택된 DAG 정보 업데이트
         selected_info = self.query_one("#selected-dag-info", Static)
         if self.selected_dag_info:
             status = (
@@ -607,15 +482,11 @@ class DAGManagement(Widget):
         self.app_instance.sub_title = f"Selected DAG: {dag_id}"
 
     def on_key(self, event):
-        """키보드 이벤트 처리"""
-        # DAG 테이블에 포커스가 있을 때만 처리
         if self.query_one("#dag-table", DataTable).has_focus:
             if event.key == "space" or event.key == "enter":
-                # 현재 하이라이트된 행을 선택
                 dag_table = self.query_one("#dag-table", DataTable)
                 if dag_table.cursor_row is not None:
                     try:
-                        # 실제 DAG ID 컬럼(인덱스 1) 값 추출
                         row_data = dag_table.get_row_at(dag_table.cursor_row)
                         dag_id = str(row_data[1])  # "DAG_ID" 컬럼
                         self.select_dag_row(dag_id)
@@ -627,7 +498,6 @@ class DAGManagement(Widget):
                 dag_table = self.query_one("#dag-table", DataTable)
                 if dag_table.cursor_row is not None:
                     try:
-                        # 실제 DAG ID 컬럼(인덱스 1) 값 추출
                         row_data = dag_table.get_row_at(dag_table.cursor_row)
                         dag_id = str(row_data[1])  # "DAG_ID" 컬럼
                         self.select_dag_row(dag_id)
@@ -637,7 +507,7 @@ class DAGManagement(Widget):
 
     @work
     async def load_dag_details(self, dag_id: str):
-        """선택된 DAG 상세 정보 로드"""
+
         try:
             # Overview 탭 업데이트
             await self.update_overview_tab(dag_id)
@@ -687,7 +557,6 @@ class DAGManagement(Widget):
 
         dag = self.selected_dag_info
 
-        # DAG 상태 아이콘
         if dag.is_paused:
             status_icon = "⏸️"
             status_text = "Paused"
@@ -704,7 +573,7 @@ class DAGManagement(Widget):
 • [bold]Status:[/bold] {status_icon} {status_text}
 • [bold]Description:[/bold] {dag.description or 'No description provided'}
 • [bold]Owner:[/bold] {dag.owner or 'Unknown'}
-• [bold]Tags:[/bold] {', '.join(dag.tags) if dag.tags else 'None'}
+• [bold]Tags:[/bold] {', '.join([str(tag) for tag in dag.tags]) if dag.tags else 'None'}
 
 [bold]Schedule & Configuration:[/bold]
 • [bold]Schedule:[/bold] {dag.schedule_interval or 'Manual/None'}
@@ -718,7 +587,7 @@ class DAGManagement(Widget):
 
 [bold]Tasks:[/bold]
 • [bold]Total Tasks:[/bold] {len(dag.tasks) if dag.tasks else 0}
-• [bold]Task IDs:[/bold] {', '.join([t.task_id for t in dag.tasks[:5]]) if dag.tasks else 'None'}{' ...' if dag.tasks and len(dag.tasks) > 5 else ''}
+• [bold]Task IDs:[/bold] {', '.join([str(t.task_id) for t in dag.tasks[:5]]) if dag.tasks else 'None'}{' ...' if dag.tasks and len(dag.tasks) > 5 else ''}
 
 [bold]Recent Statistics:[/bold]
 • Total Runs: Loading...    • Success Rate: Loading...    
@@ -741,7 +610,6 @@ class DAGManagement(Widget):
                 pass  # Silent fail
 
     async def update_runs_tab(self, dag_id: str):
-        """Runs 탭 내용 업데이트"""
         try:
             runs = await self.app_instance.airflow_client.get_dag_runs(dag_id, limit=20)
 
@@ -809,18 +677,42 @@ class DAGManagement(Widget):
                     task.pool or "default",
                     str(task.retries) if task.retries else "0",
                     task.timeout or "-",
-                    ", ".join(task.depends_on) if task.depends_on else "-",
+                    (
+                        ", ".join([str(dep) for dep in task.depends_on])
+                        if task.depends_on
+                        else "-"
+                    ),
                 )
 
     async def update_code_tab(self, dag_id: str):
-        """Code 탭 내용 업데이트"""
         try:
-            # DAG 코드 가져오기 (향후 구현)
             code_content = self.query_one("#code-content", RichLog)
             code_content.clear()
 
-            # 임시 코드 표시
+            # Get the DAG file location using CLI client
+            try:
+                dag_file_path = await self.app_instance.airflow_client.get_dag_loc(dag_id)
+                if dag_file_path:
+                    # Read the actual DAG file content
+                    import aiofiles
+                    try:
+                        async with aiofiles.open(dag_file_path, 'r', encoding='utf-8') as f:
+                            actual_code = await f.read()
+                        code_content.write(actual_code)
+                        return
+                    except FileNotFoundError:
+                        code_content.write(f"# DAG file not found at: {dag_file_path}\n# File may have been moved or deleted.\n\n")
+                    except PermissionError:
+                        code_content.write(f"# Permission denied accessing: {dag_file_path}\n# Check file permissions.\n\n")
+                    except Exception as file_error:
+                        code_content.write(f"# Error reading DAG file: {str(file_error)}\n# Path: {dag_file_path}\n\n")
+                        
+            except Exception as location_error:
+                code_content.write(f"# Error getting DAG location: {str(location_error)}\n\n")
+
+            # Fallback to sample code if we can't read the actual file
             sample_code = f"""# DAG: {dag_id}
+# Note: This is sample code as the actual DAG file could not be loaded
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
@@ -886,7 +778,7 @@ start >> extract_users
 • File Path: {dag.fileloc or 'Unknown'}
 • Owner: {dag.owner or 'Unknown'}
 • Description: {dag.description or 'No description'}
-• Tags: {', '.join(dag.tags) if dag.tags else 'None'}
+• Tags: {', '.join([str(tag) for tag in dag.tags]) if dag.tags else 'None'}
 
 [bold]Schedule & Execution:[/bold]
 • Schedule Interval: {dag.schedule_interval or 'None'}
@@ -902,7 +794,7 @@ start >> extract_users
 
 [bold]Tasks:[/bold]
 • Total Tasks: {len(dag.tasks) if dag.tasks else 0}
-• Task IDs: {', '.join([t.task_id for t in dag.tasks]) if dag.tasks else 'None'}"""
+• Task IDs: {', '.join([str(t.task_id) for t in dag.tasks]) if dag.tasks else 'None'}"""
 
         details_content = self.query_one("#details-content", Static)
         details_content.update(content)

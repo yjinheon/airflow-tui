@@ -16,6 +16,13 @@ class TaskInfo:
     retries: int = 0
     timeout: Optional[str] = None
     depends_on: List[str] = field(default_factory=list)
+    run_id: Optional[str] = None
+    try_number: int = 1
+
+    @property
+    def is_task_instance(self) -> bool:
+        """TaskInstance 여부"""
+        return self.run_id is not None
 
 
 @dataclass
@@ -109,12 +116,13 @@ class DAGInfo:
 
     @property
     def status_icon(self) -> str:
-        if self.is_paused:
-            return "⏸️"
-        elif not self.is_active:
-            return "🔴"
-        else:
-            return "🟢"
+        # if self.is_paused:
+        #     return "⏸️"
+        # elif not self.is_active:
+        #     return "🔴"
+        # else:
+        #     return "🟢"
+        return "🟢"
 
     @property
     def task_count(self) -> int:
