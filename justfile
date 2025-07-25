@@ -23,6 +23,10 @@ lint:
 test *args:
     uv run --no-sync pytest {{ args }}
 
+##### todo
+
+# airflow dags report
+
 # AIRFLOW
 # init airflow db
 airflow-init:

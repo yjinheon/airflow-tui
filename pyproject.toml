@@ -13,4 +13,5 @@ dependencies = [
     "polars>=1.31.0",
     "pandas>=2.3.1",
     "graphviz>=0.21",
+    "aiofiles>=24.1.0",
 ]
