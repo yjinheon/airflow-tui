@@ -1,13 +1,8 @@
-"""
-Airflow CLI Based Client
-"""
-
-import subprocess
 import json
+import time
 import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime
-import re
 
 from src.tui.clients.base import (
     AirflowClient,
@@ -70,34 +65,17 @@ class AirflowCLIClient(AirflowClient):
             raise AirflowClientError(f"CLI command error: {str(e)}")
 
     # DAG commands
-    async def get_dags(self) -> List[DAGInfo]:
+    async def get_dags(self, include_details=True, max_concurrent=15) -> List[DAGInfo]:
         """airflow dags list --output json"""
         try:
             result = await self._run_command(
                 ["airflow", "dags", "list", "--output", "json"]
             )
 
-            dags = []
-            for dag_data in result:
-                dags.append(
-                    DAGInfo(
-                        dag_id=dag_data["dag_id"],
-                        is_active=not dag_data.get("paused", True),
-                        is_paused=dag_data.get("paused", False),
-                        description=dag_data.get("description", ""),
-                        owner=(
-                            dag_data.get("owners", [""])[0]
-                            if dag_data.get("owners")
-                            else ""
-                        ),
-                        schedule_interval=dag_data.get("schedule_interval"),
-                        start_date=dag_data.get("start_date"),
-                        tags=dag_data.get("tags", []),
-                        tasks=[],  # 빈 리스트로 초기화하여 성능 향상
-                    )
-                )
+            if not include_details:
+                return [self._create_simple_dag_info(dag_data) for dag_data in result]
 
-            return dags
+            return await self._get_dags_details_concurrent(result, max_concurrent)
 
         except Exception as e:
             # Fallback to simple list if JSON fails
@@ -112,6 +90,69 @@ class AirflowCLIClient(AirflowClient):
                 )
                 raise AirflowDataError(f"Failed to get DAGs: {str(e)}")
 
+    async def _get_dag_with_fallback(
+        self, dag_id: str, dag_data_map: dict, semaphore: asyncio.Semaphore
+    ) -> DAGInfo:
+        async with semaphore:
+            try:
+                detailed_dag = await self.get_dag_details(dag_id)
+                return detailed_dag
+            except Exception as e:
+                print(f"Warning: Failed to get details for DAG {dag_id}: {str(e)}")
+                # 실패 시 기본 정보로 DAGInfo 생성
+                return self._create_simple_dag_info(dag_data_map[dag_id])
+
+    async def _get_dags_details_concurrent(
+        self, dag_list: List[dict], max_concurrent: int
+    ) -> List[DAGInfo]:
+        dag_ids = [dag_data["dag_id"] for dag_data in dag_list]
+        dag_data_map = {dag_data["dag_id"]: dag_data for dag_data in dag_list}
+
+        semaphore = asyncio.Semaphore(max_concurrent)
+
+        start_time = time.time()
+        tasks = [
+            self._get_dag_with_fallback(dag_id, dag_data_map, semaphore)
+            for dag_id in dag_ids
+        ]
+        dags = await asyncio.gather(*tasks)
+
+        elapsed = time.time() - start_time
+        print(
+            f"Fetched {len(dags)} DAGs in {elapsed:.2f}s (concurrent={max_concurrent})"
+        )
+
+        return dags
+
+    def _create_simple_dag_info(self, dag_data: dict) -> DAGInfo:
+        return DAGInfo(
+            dag_id=dag_data["dag_id"],
+            is_active=not dag_data.get("paused", True),
+            is_paused=dag_data.get("paused", False),
+            description=dag_data.get("description", ""),
+            owner=(dag_data.get("owners", [""])[0] if dag_data.get("owners") else ""),
+            schedule_interval=dag_data.get("schedule_interval"),
+            start_date=dag_data.get("start_date"),
+            tags=dag_data.get("tags", []),
+            tasks=[],  # 빈 리스트로 초기화
+        )
+
+    async def get_dag_loc(self, dag_id: str) -> str:
+        """airflow dags list --output json"""
+        try:
+            result = await self._run_command(
+                ["airflow", "dags", "list", "--output", "json"]
+            )
+
+            for dag_data in result:
+                if dag_data["dag_id"] == dag_id:
+                    return dag_data.get("fileloc", "")
+
+            raise ValueError(f"DAG {dag_id} not found")
+
+        except Exception as e:
+            raise AirflowDataError(f"Failed to get DAG location: {str(e)}")
+
     async def get_dag_details(self, dag_id: str) -> DAGInfo:
         """airflow dags details {dag_id} --output json"""
         try:
@@ -120,21 +161,8 @@ class AirflowCLIClient(AirflowClient):
                 ["airflow", "dags", "details", dag_id, "--output", "json"]
             )
 
-            # pares json
-            if isinstance(result, dict):
-                dag_data = result
-            elif isinstance(result, list) and len(result) > 0:
-                dag_data = result[0]
-            else:
-                raise AirflowDataError("Invalid JSON response from dags details")
-
-            # get tasks
-            try:
-                tasks = await self.get_dag_tasks(dag_id)
-            except Exception as e:
-                # Add error log and return empty list
-                print(f"Warning: Failed to get tasks for DAG {dag_id}: {str(e)}")
-                tasks = []
+            dag_data = self._extract_dag(result)
+            tasks = await self.get_dag_tasks(dag_id)
 
             dag_info = DAGInfo(
                 dag_id=dag_data.get("dag_id", dag_id),
@@ -177,6 +205,13 @@ class AirflowCLIClient(AirflowClient):
                     raise AirflowDataError(
                         f"Failed to get DAG details for {dag_id}: {str(e)}"
                     )
+
+    def _extract_dag(self, result) -> dict:
+        if isinstance(result, dict):
+            return result
+        if isinstance(result, list) and result:
+            return result[0]
+        raise AirflowDataError(f"Invalid JSON response : {type(result).__name__}")
 
     def _extract_owner(self, owners_data) -> str:
         """owners 데이터에서 첫 번째 owner 추출"""
@@ -244,11 +279,9 @@ class AirflowCLIClient(AirflowClient):
         )
 
     async def get_dag_tasks(self, dag_id: str) -> List[TaskInfo]:
-        """airflow tasks list {dag_id} --output json"""
+        """airflow tasks list {dag_id}"""
         try:
-            result = await self._run_command(
-                ["airflow", "tasks", "list", dag_id, "--output", "json"]
-            )
+            result = await self._run_command(["airflow", "tasks", "list", dag_id])
 
             tasks = []
             for task_data in result:
@@ -256,7 +289,7 @@ class AirflowCLIClient(AirflowClient):
                     TaskInfo(
                         task_id=task_data["task_id"],
                         dag_id=dag_id,
-                        state="unknown",  # CLI에서는 task state 별도 조회 필요
+                        state="unknown",  # CLI에서는 task state 별도 조회 #todo
                         operator=task_data.get("operator", ""),
                         pool=task_data.get("pool", "default"),
                         retries=task_data.get("retries", 0),
@@ -287,20 +320,21 @@ class AirflowCLIClient(AirflowClient):
             return f"Error retrieving DAG structure: {str(e)}"
 
     async def get_dag_runs(self, dag_id: str, limit: int = 10) -> List[DAGRun]:
-        """airflow dags list-runs {dag_id} --output json --limit {limit}"""
+        """airflow dags list-runs {dag_id} --output json"""
         try:
             result = await self._run_command(
                 [
                     "airflow",
                     "dags",
                     "list-runs",
+                    "-d",
                     dag_id,
-                    "--output",
+                    "-o",
                     "json",
-                    "--limit",
-                    str(limit),
                 ]
             )
+
+            result = result[:limit] if isinstance(result, list) else []
 
             runs = []
             for run_data in result:
